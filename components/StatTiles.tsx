@@ -1,72 +1,108 @@
-import type { MonthComparison } from "@/lib/types";
 import { money, pctChange } from "@/lib/format";
+import type { PeriodComparison } from "@/lib/types";
 
-function Delta({
-  current,
-  previous,
-  upIsGood,
+function DeltaLine({
+  text,
+  good,
   vsLabel,
+  fallback,
 }: {
-  current: number;
-  previous: number;
-  upIsGood: boolean;
+  text: string | null;
+  good: boolean;
   vsLabel: string;
+  fallback?: string;
 }) {
-  const pct = pctChange(current, previous);
-  if (pct === null) {
-    return <p className="mt-1 text-xs text-muted">no activity in {vsLabel}</p>;
+  if (text === null) {
+    return <p className="mt-1 text-xs text-muted">{fallback ?? `no activity in ${vsLabel}`}</p>;
   }
-  const up = pct >= 0;
-  const good = up === upIsGood;
-  const arrow = up ? "▲" : "▼";
   return (
     <p className="mt-1 text-xs">
-      <span className={good ? "text-good" : "text-bad"}>
-        {arrow} {Math.abs(pct).toFixed(1)}%
-      </span>{" "}
+      <span className={good ? "text-good" : "text-bad"}>{text}</span>{" "}
       <span className="text-muted">vs {vsLabel}</span>
     </p>
   );
 }
 
-/** Month-over-month comparison: revenue, expenses, net profit. */
-export default function StatTiles({ comparison }: { comparison: MonthComparison }) {
+/**
+ * KPI row for the selected period: revenue, expenses, net profit, and profit
+ * margin, each compared against the equal-length previous period.
+ */
+export default function StatTiles({ comparison }: { comparison: PeriodComparison }) {
   const { current, previous } = comparison;
+
+  const moneyDelta = (cur: number, prev: number, upIsGood: boolean) => {
+    const pct = pctChange(cur, prev);
+    if (pct === null) return { text: null, good: true };
+    const up = pct >= 0;
+    return {
+      text: `${up ? "▲" : "▼"} ${Math.abs(pct).toFixed(1)}%`,
+      good: up === upIsGood,
+    };
+  };
+
+  const marginDelta = () => {
+    if (current.marginPct === null || !previous || previous.marginPct === null) {
+      return { text: null, good: true };
+    }
+    const diff = current.marginPct - previous.marginPct;
+    return {
+      text: `${diff >= 0 ? "▲" : "▼"} ${Math.abs(diff).toFixed(1)} pts`,
+      good: diff >= 0,
+    };
+  };
+
   const tiles = [
     {
-      label: `Revenue · ${current.label}`,
-      value: current.revenue,
-      prev: previous.revenue,
-      upIsGood: true,
+      label: "Revenue",
+      value: money(current.revenue),
+      negative: false,
+      delta: previous ? moneyDelta(current.revenue, previous.revenue, true) : null,
     },
     {
-      label: `Expenses · ${current.label}`,
-      value: current.expenses,
-      prev: previous.expenses,
-      upIsGood: false,
+      label: "Expenses",
+      value: money(current.expenses),
+      negative: false,
+      delta: previous ? moneyDelta(current.expenses, previous.expenses, false) : null,
     },
     {
-      label: `Net profit · ${current.label}`,
-      value: current.net,
-      prev: previous.net,
-      upIsGood: true,
+      label: "Net profit",
+      value: money(current.net),
+      negative: current.net < 0,
+      delta: previous ? moneyDelta(current.net, previous.net, true) : null,
+    },
+    {
+      label: "Profit margin",
+      value: current.marginPct !== null ? `${current.marginPct.toFixed(1)}%` : "—",
+      negative: current.marginPct !== null && current.marginPct < 0,
+      delta: previous ? marginDelta() : null,
+      fallback: "needs revenue in both periods",
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {tiles.map((t) => (
-        <div key={t.label} className="rounded-xl border border-hairline bg-surface p-4">
-          <p className="text-xs text-muted">{t.label}</p>
-          <p className={`mt-1 text-2xl font-semibold ${t.value < 0 ? "text-bad" : "text-ink"}`}>
-            {money(t.value)}
+        <div key={t.label} className="min-w-0 rounded-xl border border-hairline bg-surface p-4">
+          <p className="text-xs text-muted">
+            {t.label} · {current.label}
           </p>
-          <Delta
-            current={t.value}
-            previous={t.prev}
-            upIsGood={t.upIsGood}
-            vsLabel={previous.label}
-          />
+          <p
+            className={`mt-1 truncate text-xl font-semibold sm:text-2xl ${
+              t.negative ? "text-bad" : "text-ink"
+            }`}
+          >
+            {t.value}
+          </p>
+          {t.delta ? (
+            <DeltaLine
+              text={t.delta.text}
+              good={t.delta.good}
+              vsLabel={previous!.label}
+              fallback={"fallback" in t ? (t.fallback as string) : undefined}
+            />
+          ) : (
+            <p className="mt-1 text-xs text-muted">all data — nothing to compare</p>
+          )}
         </div>
       ))}
     </div>

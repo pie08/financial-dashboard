@@ -1,10 +1,17 @@
 # Detailing Finance
 
 Dark-mode financial dashboard for a mobile detailing business. Upload bank CSV
-exports, get weekly revenue/spending charts, a category breakdown, a balance
-line, month-over-month comparison, and a searchable transactions table with
-editable categories. All data stays in your browser (localStorage) — nothing
-is uploaded to any server.
+exports, get revenue/spending charts, a category breakdown, a balance line,
+period-over-period KPIs (revenue, expenses, net profit, profit margin), a
+personal-payments box, and a searchable transactions table with editable
+categories. All data stays in your browser (localStorage) — nothing is
+uploaded to any server.
+
+Everything is scoped by the period filter (this week / this month / last
+month / 4 weeks / 12 weeks / this year / all). Comparisons are always fair:
+each period is compared against the equal-length span right before it, so a
+half-elapsed July compares against June 1–15, not the whole of June. Charts
+bucket by day, week, or month automatically based on the selected range.
 
 ## Run it
 
@@ -38,9 +45,13 @@ Every transaction lands in one category, and each category has a *kind*:
 
 - **income** (Customer Payments, Other Income) → counts as revenue
 - **expense** (Fuel & Gas, Supplies & Chemicals, …) → counts as spending
-- **transfer** (Internal Transfer) → excluded from both, since moving your own
-  money between accounts isn't revenue or spending. It still affects the
-  balance chart, because it changes what's in the account.
+- **transfer** (Internal Transfer) → payments to yourself. Excluded from
+  revenue and expenses (so they can't inflate either) and shown in their own
+  "Personal payments" box. They still affect the balance chart, because they
+  change what's in the account.
+
+Profit margin = net profit ÷ revenue for the selected period; its delta is
+shown in percentage points against the previous period.
 
 Categorization order: structural rules (Venmo cashouts → Customer Payments,
 "Transfer to/from … Business" → Internal Transfer) beat the bank's own label,

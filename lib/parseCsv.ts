@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import { categorize } from "./categories";
-import type { ImportResult, Transaction } from "./types";
+import type { ImportResult } from "./types";
 
 /** Normalize a header for matching: lowercase, alphanumeric only. */
 function norm(header: string): string {

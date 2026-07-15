@@ -9,18 +9,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { WeekPoint } from "@/lib/types";
+import type { BucketPoint } from "@/lib/types";
 import { moneyCompact } from "@/lib/format";
 import ChartTooltip from "./ChartTooltip";
 
-/** Single-series weekly bar chart (used for both revenue and spending). */
-export default function WeeklyBarChart({
+/** Single-series bar chart over day/week/month buckets. */
+export default function TrendBarChart({
   data,
   dataKey,
   name,
   color,
 }: {
-  data: WeekPoint[];
+  data: BucketPoint[];
   dataKey: "revenue" | "spending";
   name: string;
   color: string;
