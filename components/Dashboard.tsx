@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   balanceSeries,
+  bucketedSeries,
   categoryBreakdown,
-  monthComparison,
-  weeklySeries,
+  earliestDate,
+  latestDate,
+  periodComparison,
 } from "@/lib/analytics";
 import { prettyDate } from "@/lib/format";
 import { parseBankCsv } from "@/lib/parseCsv";
+import { filterByRange, resolvePeriod, type PeriodPreset, PERIOD_PRESETS } from "@/lib/period";
 import {
   clearAll,
   loadOverrides,
@@ -19,21 +22,42 @@ import {
 } from "@/lib/storage";
 import type { Transaction } from "@/lib/types";
 import ChartCard from "./ChartCard";
+import PeriodFilter from "./PeriodFilter";
+import PersonalPaymentsCard from "./PersonalPaymentsCard";
 import StatTiles from "./StatTiles";
 import TransactionsTable from "./TransactionsTable";
 import BalanceChart from "./charts/BalanceChart";
 import CategoryDonut from "./charts/CategoryDonut";
-import WeeklyBarChart from "./charts/WeeklyBarChart";
+import TrendBarChart from "./charts/TrendBarChart";
+
+const PERIOD_KEY = "fd.period.v1";
 
 export default function Dashboard() {
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [preset, setPreset] = useState<PeriodPreset>("this-month");
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // localStorage is client-only, so state must hydrate in an effect to
+    // match the server-rendered empty state first.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTxns(loadTransactions());
+    const saved = window.localStorage.getItem(PERIOD_KEY);
+    if (saved && PERIOD_PRESETS.some((p) => p.id === saved)) {
+      setPreset(saved as PeriodPreset);
+    }
     setHydrated(true);
+  }, []);
+
+  const changePreset = useCallback((p: PeriodPreset) => {
+    setPreset(p);
+    try {
+      window.localStorage.setItem(PERIOD_KEY, p);
+    } catch {
+      // best effort
+    }
   }, []);
 
   const importText = useCallback((csvText: string, sourceName: string) => {
@@ -93,21 +117,45 @@ export default function Dashboard() {
     });
   }, []);
 
-  const weekly = useMemo(() => weeklySeries(txns), [txns]);
-  const slices = useMemo(() => categoryBreakdown(txns), [txns]);
-  const balance = useMemo(() => balanceSeries(txns), [txns]);
-  const comparison = useMemo(() => monthComparison(txns), [txns]);
+  const period = useMemo(() => {
+    const anchor = latestDate(txns);
+    if (!anchor) return null;
+    return resolvePeriod(preset, anchor, earliestDate(txns)!);
+  }, [txns, preset]);
+
+  const inPeriod = useMemo(
+    () => (period ? filterByRange(txns, period.current) : []),
+    [txns, period]
+  );
+  const comparison = useMemo(
+    () => (period ? periodComparison(txns, period) : null),
+    [txns, period]
+  );
+  const series = useMemo(
+    () => (period ? bucketedSeries(txns, period.current, period.granularity) : []),
+    [txns, period]
+  );
+  const slices = useMemo(
+    () => (period ? categoryBreakdown(txns, period.current) : []),
+    [txns, period]
+  );
+  const balance = useMemo(() => {
+    const full = balanceSeries(txns);
+    if (!period) return full;
+    return {
+      relative: full.relative,
+      points: full.points.filter(
+        (p) => p.date >= period.current.start && p.date <= period.current.end
+      ),
+    };
+  }, [txns, period]);
 
   const dateRange = useMemo(() => {
     if (txns.length === 0) return null;
-    let min = txns[0].date;
-    let max = txns[0].date;
-    for (const t of txns) {
-      if (t.date < min) min = t.date;
-      if (t.date > max) max = t.date;
-    }
-    return `${prettyDate(min)} – ${prettyDate(max)}`;
+    return `${prettyDate(earliestDate(txns)!)} – ${prettyDate(latestDate(txns)!)}`;
   }, [txns]);
+
+  const byLabel = period ? `by ${period.granularity} · ${period.current.label}` : "";
 
   return (
     <div
@@ -118,7 +166,7 @@ export default function Dashboard() {
         handleFiles(e.dataTransfer.files);
       }}
     >
-      <header className="mb-5 flex flex-wrap items-center gap-3">
+      <header className="mb-4 flex flex-wrap items-center gap-3">
         <div className="mr-auto">
           <h1 className="text-xl font-semibold text-ink">Detailing Finance</h1>
           <p className="text-xs text-muted">
@@ -187,26 +235,29 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="space-y-4">
+          <PeriodFilter value={preset} onChange={changePreset} />
+
           {comparison && <StatTiles comparison={comparison} />}
+          {comparison && <PersonalPaymentsCard comparison={comparison} />}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ChartCard title="Weekly revenue" subtitle="Customer payments · last 12 weeks">
-              <WeeklyBarChart
-                data={weekly}
+            <ChartCard title="Revenue" subtitle={`Customer payments ${byLabel}`}>
+              <TrendBarChart
+                data={series}
                 dataKey="revenue"
                 name="Revenue"
                 color="var(--series-revenue)"
               />
             </ChartCard>
-            <ChartCard title="Weekly spending" subtitle="Money out · internal transfers excluded">
-              <WeeklyBarChart
-                data={weekly}
+            <ChartCard title="Spending" subtitle={`Money out ${byLabel} · transfers excluded`}>
+              <TrendBarChart
+                data={series}
                 dataKey="spending"
                 name="Spending"
                 color="var(--series-spending)"
               />
             </ChartCard>
-            <ChartCard title="Spending by category" subtitle="Last 12 weeks">
+            <ChartCard title="Spending by category" subtitle={period?.current.label}>
               <CategoryDonut slices={slices} />
             </ChartCard>
             <ChartCard
@@ -214,15 +265,18 @@ export default function Dashboard() {
               subtitle={
                 balance.relative
                   ? "Running total of imported transactions (export had no balance column)"
-                  : "End-of-day account balance"
+                  : `End-of-day account balance · ${period?.current.label}`
               }
             >
               <BalanceChart points={balance.points} />
             </ChartCard>
           </div>
 
-          <ChartCard title="Transactions" subtitle="Edit a category to reclassify — your change is remembered across re-imports">
-            <TransactionsTable txns={txns} onCategoryChange={handleCategoryChange} />
+          <ChartCard
+            title="Transactions"
+            subtitle={`${period?.current.label} · edit a category to reclassify — changes are remembered across re-imports`}
+          >
+            <TransactionsTable txns={inPeriod} onCategoryChange={handleCategoryChange} />
           </ChartCard>
         </div>
       )}

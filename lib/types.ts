@@ -22,9 +22,9 @@ export interface ImportResult {
   errors: string[];
 }
 
-export interface WeekPoint {
-  /** ISO date of the Monday starting the week */
-  weekStart: string;
+/** One bar-chart bucket (a day, a week, or a month depending on the period). */
+export interface BucketPoint {
+  key: string;
   label: string;
   revenue: number;
   spending: number;
@@ -41,14 +41,20 @@ export interface BalancePoint {
   balance: number;
 }
 
-export interface MonthStats {
+export interface PeriodStats {
   label: string;
   revenue: number;
   expenses: number;
   net: number;
+  /** net / revenue × 100, or null when there was no revenue */
+  marginPct: number | null;
+  /** Internal transfers into this account — money you paid yourself */
+  personalIn: number;
+  /** Internal transfers out — money you moved back to the business account */
+  personalOut: number;
 }
 
-export interface MonthComparison {
-  current: MonthStats;
-  previous: MonthStats;
+export interface PeriodComparison {
+  current: PeriodStats;
+  previous: PeriodStats | null;
 }
